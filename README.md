@@ -7,7 +7,7 @@ synthetic data with known truth and run locally without an account or API key.
 | Notebook | What you can explore |
 | --- | --- |
 | [IMUs from chip to controller](imu.py) | MEMS cutaway, magnetometer calibration, attitude and frames, drift and aiding, arbitrary 3D offsets, complementary fusion, and feedback. [Course notes](course.md) |
-| [IMU math, sensor fusion, and control](attitude_lab.py) | See the equations on opening. Compare complementary and Kalman filters, fit gyro scale and bias with RLS, and change feedback gains and torque limits. [Equation guide](equations.md) · [Full derivations](attitude-theory.md) |
+| [IMU math, sensor fusion, and control](attitude_lab.py) | Open the live equation explorer to see substitutions from the selected sample. Compare complementary and Kalman filters, fit gyro scale and bias with RLS, and change feedback gains and torque limits. [Equation guide](equations.md) · [Full derivations](attitude-theory.md) |
 
 ## Open on a Mac
 
@@ -69,8 +69,13 @@ exports work regardless of tutor configuration.
 and `attitude_sim.py` hold the 3D estimators and controlled plants. Plot and tutor
 modules are separate so you can change the math or provider independently.
 
+For a new quantitative example, bind the displayed equation to the experiment's
+actual computed values with marimo controls. Define the symbols and their units
+next to the substitutions. Use the shared attitude chart layout and check
+title, axes, and legend spacing in the browser at wide and narrow widths.
+
 ```sh
-uv run --no-project --python 3.11 --with 'numpy==2.4.6' --with 'pytest>=8,<10' pytest -q
+uv run --no-project --python 3.11 --with 'numpy==2.4.6' --with 'plotly==6.5.2' --with 'pytest>=8,<10' pytest -q
 ```
 
 Reference material is organized into [hardware](hardware-sources.md),

@@ -5,7 +5,15 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from attitude_filters import Complementary, ErrorStateEKF, euler_deg, exp_so3, log_so3
+from attitude_filters import (
+    Complementary,
+    ComplementaryUpdate,
+    ErrorStateEKF,
+    KalmanUpdate,
+    euler_deg,
+    exp_so3,
+    log_so3,
+)
 from imu_sensor import magnetic_field, rotation
 
 Array = NDArray[np.float64]
@@ -13,6 +21,8 @@ Flags = NDArray[np.bool_]
 G = 9.80665
 DT = 0.02
 DURATION = 12.0
+# Diagonal body inertia used by the rigid-body plant, in kg m².
+BODY_INERTIA = (0.075, 0.09, 0.12)
 
 
 @dataclass(frozen=True)
@@ -78,6 +88,15 @@ class Replay:
     raw_mag: Array
     mount: Array
     offset_body: Array
+    updates: tuple[dict[str, "PairedUpdate"], ...]
+
+
+@dataclass(frozen=True)
+class PairedUpdate:
+    """Complementary and EKF update records for one accepted candidate input."""
+
+    complementary: ComplementaryUpdate
+    kalman: KalmanUpdate
 
 
 @dataclass(frozen=True)
@@ -88,6 +107,11 @@ class ControlTrace:
     error: Array
     torque: Array
     clipped: Flags
+    error_vector: Array
+    estimated_rate: Array
+    disturbance_torque: Array
+    gyroscopic_torque: Array
+    angular_acceleration: Array
 
 
 @dataclass(frozen=True)
@@ -206,6 +230,7 @@ def run_replay(settings: Settings) -> Replay:
     accel_correction, mag_correction = np.zeros((2, n))
     acc_ok, mag_ok, comp_acc_ok, comp_mag_ok = np.zeros((4, n), dtype=np.bool_)
     noise_series = np.random.default_rng(2026).standard_normal((n, 3, 3))
+    update_rows: list[dict[str, PairedUpdate]] = []
     for k, t in enumerate(time):
         if k:
             gyro_only = gyro_only @ exp_so3(raw_gyro[k - 1] * DT)
@@ -216,21 +241,25 @@ def run_replay(settings: Settings) -> Replay:
         )
         raw_gyro[k], raw_force[k], raw_mag[k] = gyro, force, mag
         accel_norm[k], mag_norm[k] = np.linalg.norm(aided) / G, np.linalg.norm(mag)
+        row: dict[str, PairedUpdate] = {}
         for measured, reference, noise, weight, is_mag in _aiding(settings, magnetic, aided, mag):
-            comp.correct(measured, reference, DT, weight)
+            comp_update = comp.correct(measured, reference, DT, weight)
             prior = ekf.rotation.copy()
+            ekf_update = ekf.correct_inspected(
+                measured, reference, noise, 9.21 if settings.reject_disturbance else None
+            )
+            row["magnetometer" if is_mag else "accelerometer"] = PairedUpdate(
+                comp_update, ekf_update
+            )
             if is_mag:
                 comp_mag_ok[k] = True
-                mag_nis[k], mag_ok[k] = ekf.correct(
-                    measured, reference, noise, 9.21 if settings.reject_disturbance else None
-                )
+                mag_nis[k], mag_ok[k] = ekf_update.nis, ekf_update.accepted
                 mag_correction[k] = np.rad2deg(np.linalg.norm(log_so3(prior.T @ ekf.rotation)))
             else:
                 comp_acc_ok[k] = True
-                accel_nis[k], acc_ok[k] = ekf.correct(
-                    measured, reference, noise, 9.21 if settings.reject_disturbance else None
-                )
+                accel_nis[k], acc_ok[k] = ekf_update.nis, ekf_update.accepted
                 accel_correction[k] = np.rad2deg(np.linalg.norm(log_so3(prior.T @ ekf.rotation)))
+        update_rows.append(row)
         gyro_r[k], comp_r[k], ekf_r[k] = (
             r @ assumed.T for r in (gyro_only, comp.rotation, ekf.rotation)
         )
@@ -262,6 +291,7 @@ def run_replay(settings: Settings) -> Replay:
         raw_mag,
         mount,
         offset,
+        tuple(update_rows),
     )
 
 
@@ -286,10 +316,15 @@ def _controlled_plant(
     ekf = ErrorStateEKF(initial, settings.kalman_gyro_density, settings.kalman_bias_rw)
     estimator = ekf if kalman else comp
     previous_gyro = np.zeros(3)
-    inertias = np.array([0.075, 0.09, 0.12])
+    inertias = np.asarray(BODY_INERTIA, dtype=np.float64)
     trace = np.empty((time.size, 3, 3))
     torque = np.empty((time.size, 3))
     clipped = np.zeros(time.size, dtype=np.bool_)
+    error_vectors = np.empty((time.size, 3))
+    estimated_rates = np.empty((time.size, 3))
+    disturbance_torques = np.empty((time.size, 3))
+    gyroscopic_torques = np.empty((time.size, 3))
+    angular_accelerations = np.empty((time.size, 3))
     noise_series = np.random.default_rng(301).standard_normal((time.size, 3, 3))
     for k, t in enumerate(time):
         if k:
@@ -305,17 +340,30 @@ def _controlled_plant(
                 comp.correct(z, d, DT, weight)
         body = estimator.rotation @ assumed.T
         omega_hat = assumed @ (gyro - estimator.bias)
+        estimated_rates[k] = omega_hat
         error = log_so3(body.T @ desired[k])
+        error_vectors[k] = error
         requested = kp * error - kd * omega_hat
         torque[k] = np.clip(requested, -limit, limit)
         clipped[k] = np.any(abs(requested) > limit)
         exterior = disturbance_nm * np.array([0.6, -0.8, 0.45]) if 5 <= t < 6 else np.zeros(3)
+        disturbance_torques[k] = exterior
+        gyroscopic_torques[k] = np.cross(rate, inertias * rate)
         trace[k] = attitude
-        angular_accel = (torque[k] + exterior - np.cross(rate, inertias * rate)) / inertias
+        angular_accel = (torque[k] + exterior - gyroscopic_torques[k]) / inertias
+        angular_accelerations[k] = angular_accel
         attitude = attitude @ exp_so3(rate * DT)
         rate = rate + angular_accel * DT
     return ControlTrace(
-        np.array([euler_deg(r) for r in trace]), _errors(desired, trace), torque, clipped
+        np.array([euler_deg(r) for r in trace]),
+        _errors(desired, trace),
+        torque,
+        clipped,
+        error_vectors,
+        estimated_rates,
+        disturbance_torques,
+        gyroscopic_torques,
+        angular_accelerations,
     )
 
 

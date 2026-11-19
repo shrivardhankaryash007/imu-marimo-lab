@@ -23,8 +23,9 @@ def _():
     import attitude_sim as sim
     import gyro_rls as rls
     import imu_tutor as tutor
+    import live_equations as live
 
-    return Path, StringIO, asyncio, charts, mo, np, re, rls, sim, tutor
+    return Path, StringIO, asyncio, charts, live, mo, np, re, rls, sim, tutor
 
 
 @app.cell(hide_code=True)
@@ -44,13 +45,100 @@ def _(Path, mo, re, tutor):
         [Kalman filter](#kalman-filter) · [RLS](#recursive-least-squares) ·
         [Control theory](#control-theory)
 
-        Try the [sensor fusion replay](#sensor-fusion-replay),
-        [RLS experiment](#rls-experiment), or [control experiment](#adjust-the-attitude).
+        Try the [live equations](#live-equation-explorer),
+        [sensor fusion replay](#sensor-fusion-replay), [RLS experiment](#rls-experiment),
+        or [control experiment](#adjust-the-attitude).
         """),
-            mo.md(visible_math),
         ]
     )
     return equations, tutor_context, visible_math
+
+
+@app.cell(hide_code=True)
+def _(mo, sim):
+    equation_kind = mo.ui.radio(
+        ["Prediction", "Complementary", "Kalman", "RLS", "Control"],
+        value="Prediction",
+        inline=True,
+        label="Equation",
+    )
+    sample_time = mo.ui.slider(
+        0,
+        sim.DURATION,
+        step=sim.DT,
+        value=1.2,
+        label="Inspect sample (s)",
+        debounce=True,
+        show_value=True,
+        include_input=True,
+        full_width=True,
+    )
+    equation_axis = mo.ui.dropdown({"X": 0, "Y": 1, "Z": 2}, value="Z", label="Component")
+    equation_sensor = mo.ui.dropdown(
+        {"Accelerometer": "accelerometer", "Magnetometer": "magnetometer"},
+        value="Accelerometer",
+        label="Correction reference",
+    )
+    equation_plant = mo.ui.dropdown(["EKF", "Complementary"], value="EKF", label="Controller input")
+    mo.vstack(
+        [
+            mo.md("""
+        ## Live equation explorer
+
+        Choose an equation and move the shared sample slider. The numbers come
+        from that exact sample. The component is a sensor axis for prediction
+        and corrections, and a body axis for torque.
+        """),
+            equation_kind,
+            sample_time,
+            mo.hstack([equation_axis, equation_sensor, equation_plant], justify="start", wrap=True),
+        ]
+    )
+    return equation_axis, equation_kind, equation_plant, equation_sensor, sample_time
+
+
+@app.cell(hide_code=True)
+def _(
+    calibration_run,
+    control_run,
+    controller,
+    equation_axis,
+    equation_kind,
+    equation_plant,
+    equation_sensor,
+    live,
+    mo,
+    replay,
+    rls_inputs,
+    sample_time,
+    settings,
+    sim,
+):
+    _i = round(sample_time.value / sim.DT)
+    _axis = equation_axis.value
+    _reference = equation_sensor.value
+    match equation_kind.value:
+        case "Complementary":
+            _lesson = live.complementary(replay, settings, _i, _axis, _reference)
+        case "Kalman":
+            _lesson = live.kalman(replay, settings, _i, _axis, _reference)
+        case "RLS":
+            _lesson = live.rls_update(calibration_run, rls_inputs.value["forgetting"], _i)
+        case "Control":
+            _trace = control_run.ekf if equation_plant.value == "EKF" else control_run.complementary
+            _gains = controller.value
+            _lesson = live.control(_trace, _i, _axis, _gains["kp"], _gains["kd"], _gains["limit"])
+        case _:
+            _lesson = live.prediction(replay, _i, _axis)
+    live_equation = f"**Selected sample {sample_time.value:.2f} s**\n\n" + _lesson
+    mo.md(live_equation)
+    return (live_equation,)
+
+
+@app.cell(hide_code=True)
+def _(mo, visible_math):
+    mo.md(visible_math)
+    return
 
 
 @app.cell(hide_code=True)
@@ -203,23 +291,6 @@ def _(charts, equations, mo, replay):
 
 
 @app.cell(hide_code=True)
-def _(mo, sim):
-    sample_time = mo.ui.slider(
-        0,
-        sim.DURATION,
-        step=sim.DT,
-        value=4.2,
-        label="Inspect sample (s)",
-        debounce=True,
-        show_value=True,
-        include_input=True,
-        full_width=True,
-    )
-    mo.vstack([mo.md("## Inspect a sample"), sample_time])
-    return (sample_time,)
-
-
-@app.cell(hide_code=True)
 def _(charts, mo, np, replay, sample_time, settings, sim):
     def _vec(value: sim.Array) -> str:
         return " / ".join(f"{x:+.2f}" for x in value)
@@ -256,7 +327,11 @@ def _(charts, mo, np, replay, sample_time, settings, sim):
     )
     mo.vstack(
         [
-            mo.md(sample_summary),
+            mo.md(
+                "## Body attitude at the selected sample\n\n"
+                "[Move the shared sample slider](#live-equation-explorer) to change this view.\n\n"
+                + sample_summary
+            ),
             mo.ui.plotly(
                 charts.pose_figure(replay, _i),
                 config={"displaylogo": False, "responsive": True},
@@ -435,10 +510,10 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(charts, controller, mo, np, settings, sim):
+def _(controller, mo, np, settings, sim):
     _gains = controller.value
-    _run = sim.run_control(settings, **_gains)
-    _comp, _ekf = _run.complementary, _run.ekf
+    control_run = sim.run_control(settings, **_gains)
+    _comp, _ekf = control_run.complementary, control_run.ekf
     control_summary = (
         f"Kp {_gains['kp']:.2f}, Kd {_gains['kd']:.2f}, limit {_gains['limit']:.2f} N·m, "
         f"disturbance {_gains['disturbance']:.2f} N·m. At 12 s: complementary "
@@ -449,26 +524,46 @@ def _(charts, controller, mo, np, settings, sim):
         f"Peak torque components: {np.max(abs(_comp.torque)):.2f} and "
         f"{np.max(abs(_ekf.torque)):.2f} N·m."
     )
-    mo.vstack(
-        [
-            mo.md(control_summary),
-            mo.ui.plotly(
-                charts.control_figure(_run),
-                config={"displaylogo": False, "responsive": True},
-            ),
-        ]
-    )
-    return (control_summary,)
+    mo.md(control_summary)
+    return control_run, control_summary
 
 
 @app.cell(hide_code=True)
-def _(control_summary, equations, rls_summary, sample_summary, tutor_context, visible_math):
+def _(mo):
+    control_axis = mo.ui.radio(
+        {"Roll": 0, "Pitch": 1, "Yaw": 2}, value="Yaw", inline=True, label="Plot axis"
+    )
+    mo.vstack([control_axis])
+    return (control_axis,)
+
+
+@app.cell(hide_code=True)
+def _(charts, control_axis, control_run, mo):
+    mo.ui.plotly(
+        charts.control_figure(control_run, control_axis.value),
+        config={"displaylogo": False, "responsive": True},
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def _(
+    control_summary,
+    equations,
+    live_equation,
+    rls_summary,
+    sample_summary,
+    tutor_context,
+    visible_math,
+):
     tutor_context.values = (
         sample_summary.replace("**", "")
         + "\nControl: "
         + control_summary.replace("**", "")
         + "\nRLS: "
         + rls_summary.replace("**", "")
+        + "\nSelected live equation: "
+        + live_equation.replace("**", "")
     )
     _ordered = (
         "Complementary filters",

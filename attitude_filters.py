@@ -16,6 +16,34 @@ from numpy.typing import NDArray
 FloatArray = NDArray[np.float64]
 
 
+@dataclass(frozen=True)
+class ComplementaryUpdate:
+    """Values used by one complementary direction correction."""
+
+    observed: FloatArray
+    predicted: FloatArray
+    error: FloatArray
+    rotation_delta: FloatArray
+    bias_delta: FloatArray
+    weight: float
+
+
+@dataclass(frozen=True)
+class KalmanUpdate:
+    """Numeric intermediates and outcome of one EKF direction correction."""
+
+    observed: FloatArray
+    predicted: FloatArray
+    residual: FloatArray
+    innovation: FloatArray
+    prior_covariance: FloatArray
+    sigma: float
+    nis: float
+    accepted: bool
+    gain: FloatArray | None
+    correction: FloatArray | None
+
+
 def skew(v: FloatArray) -> FloatArray:
     """Return the 3 by 3 cross-product matrix for a three-vector."""
     x, y, z = np.asarray(v, dtype=np.float64)
@@ -115,17 +143,20 @@ class Complementary:
 
     def correct(
         self, observed_unit: FloatArray, world_unit: FloatArray, dt: float, weight: float = 1.0
-    ) -> None:
+    ) -> ComplementaryUpdate:
         """Use a measured body direction to pull the estimate toward world truth."""
         z = _unit(observed_unit)
         world = _unit(world_unit)
         h = np.asarray(self.rotation.T @ world, dtype=np.float64)
         error = np.cross(z, h)
         scale = weight * dt
-        self.rotation = np.asarray(
-            self.rotation @ exp_so3(self.kp * scale * error), dtype=np.float64
+        rotation_delta = np.asarray(self.kp * scale * error, dtype=np.float64)
+        bias_delta = np.asarray(-self.ki * scale * error, dtype=np.float64)
+        self.rotation = np.asarray(self.rotation @ exp_so3(rotation_delta), dtype=np.float64)
+        self.bias = np.asarray(self.bias + bias_delta, dtype=np.float64)
+        return ComplementaryUpdate(
+            z.copy(), h.copy(), error.copy(), rotation_delta, bias_delta, float(weight)
         )
-        self.bias = np.asarray(self.bias - self.ki * scale * error, dtype=np.float64)
 
 
 @dataclass
@@ -159,29 +190,41 @@ class ErrorStateEKF:
         self.covariance = np.asarray(phi @ self.covariance @ phi.T + q, dtype=np.float64)
         self.covariance = np.asarray(0.5 * (self.covariance + self.covariance.T), dtype=np.float64)
 
-    def correct(
+    def correct_inspected(
         self,
         observed_unit: FloatArray,
         world_unit: FloatArray,
         sigma: float,
         nis_limit: float | None = None,
-    ) -> tuple[float, bool]:
-        """Correct from one 3D direction; return NIS and whether it was accepted."""
+    ) -> KalmanUpdate:
+        """Correct one direction and retain the exact intermediates used."""
         if sigma <= 0.0:
             raise ValueError("sigma must be positive")
         z = _unit(observed_unit)
         world = _unit(world_unit)
         h = np.asarray(self.rotation.T @ world, dtype=np.float64)
         residual = np.asarray(z - h, dtype=np.float64)
+        prior_covariance = self.covariance.copy()
         observation = np.zeros((3, 6), dtype=np.float64)
         observation[:, :3] = skew(h)
         noise = np.eye(3, dtype=np.float64) * sigma**2
-        innovation = observation @ self.covariance @ observation.T + noise
+        innovation = observation @ prior_covariance @ observation.T + noise
         solved_residual = np.linalg.solve(innovation, residual)
         nis = float(residual @ solved_residual)
         if nis_limit is not None and nis > nis_limit:
-            return nis, False
-        gain = np.linalg.solve(innovation, observation @ self.covariance).T
+            return KalmanUpdate(
+                z.copy(),
+                h.copy(),
+                residual.copy(),
+                innovation.copy(),
+                prior_covariance,
+                float(sigma),
+                nis,
+                False,
+                None,
+                None,
+            )
+        gain = np.linalg.solve(innovation, observation @ prior_covariance).T
         delta = np.asarray(gain @ residual, dtype=np.float64)
         identity = np.eye(6, dtype=np.float64)
         remainder = identity - gain @ observation
@@ -192,4 +235,26 @@ class ErrorStateEKF:
         reset[:3, :3] -= 0.5 * skew(delta[:3])
         self.covariance = np.asarray(reset @ covariance @ reset.T, dtype=np.float64)
         self.covariance = np.asarray(0.5 * (self.covariance + self.covariance.T), dtype=np.float64)
-        return nis, True
+        return KalmanUpdate(
+            z.copy(),
+            h.copy(),
+            residual.copy(),
+            innovation.copy(),
+            prior_covariance,
+            float(sigma),
+            nis,
+            True,
+            gain.copy(),
+            delta.copy(),
+        )
+
+    def correct(
+        self,
+        observed_unit: FloatArray,
+        world_unit: FloatArray,
+        sigma: float,
+        nis_limit: float | None = None,
+    ) -> tuple[float, bool]:
+        """Correct from one 3D direction; return NIS and whether it was accepted."""
+        update = self.correct_inspected(observed_unit, world_unit, sigma, nis_limit)
+        return update.nis, update.accepted

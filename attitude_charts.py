@@ -23,15 +23,40 @@ _COLORS = {
 _DASHES = {"truth": "solid", "gyro": "dot", "complementary": "dash", "ekf": "solid"}
 
 
+def _layout(title: str, height: int, *, left: int, right: int) -> dict:
+    """Reserve space at the container edges, outside the axes or 3D scene."""
+    return {
+        "title": {
+            "text": title,
+            "xref": "container",
+            "yref": "container",
+            "x": 0.5,
+            "xanchor": "center",
+            "y": 0.99,
+            "yanchor": "top",
+        },
+        "template": "plotly_white",
+        "height": height,
+        "autosize": True,
+        "legend": {
+            "orientation": "h",
+            "xref": "container",
+            "yref": "container",
+            "yanchor": "bottom",
+            "y": 0.02,
+            "x": 0.5,
+            "xanchor": "center",
+            "maxheight": 66,
+            "groupclick": "togglegroup",
+        },
+        "margin": {"l": left, "r": right, "t": 78, "b": 124},
+    }
+
+
 def _base(figure: go.Figure, title: str, height: int) -> go.Figure:
     figure.update_layout(
-        title=title,
-        template="plotly_white",
-        height=height,
-        autosize=True,
+        _layout(title, height, left=64, right=24),
         hovermode="x unified",
-        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "x": 0},
-        margin={"l": 64, "r": 24, "t": 92, "b": 48},
         font={"family": "Arial, sans-serif", "size": 12, "color": "#202124"},
     )
     figure.update_xaxes(showgrid=True, gridcolor="#e7eaed")
@@ -173,64 +198,66 @@ def diagnostic_figure(run: Replay) -> go.Figure:
     return _base(figure, "Estimator diagnostics", 700)
 
 
-def control_figure(run: ControlRun) -> go.Figure:
-    """Compare closed-loop pointing error, attitude response and torque."""
+def control_figure(run: ControlRun, axis: int = 2) -> go.Figure:
+    """Compare pointing error and one selected axis response and torque.
+
+    ``axis`` is the zero-based body axis: 0 roll, 1 pitch, or 2 yaw.
+    """
+    if axis not in (0, 1, 2):
+        raise ValueError("axis must be 0 (roll), 1 (pitch), or 2 (yaw)")
+    label = ("Roll", "Pitch", "Yaw")[axis]
     figure = make_subplots(
         rows=3,
         cols=1,
         shared_xaxes=True,
         vertical_spacing=0.065,
-        subplot_titles=("Pointing error", "Attitude response", "Control torque"),
+        subplot_titles=("Pointing error", f"{label} response", f"{label} control torque"),
     )
     for name, trace, color, dash in (
         ("Complementary", run.complementary, _COLORS["complementary"], _DASHES["complementary"]),
         ("Error-state EKF", run.ekf, _COLORS["ekf"], _DASHES["ekf"]),
     ):
-        _line(figure, run.time, trace.error, f"{name} error", color, dash, row=1)
+        _line(figure, run.time, trace.error, name, color, dash, row=1)
     figure.update_yaxes(title_text="Error (deg)", rangemode="tozero", row=1, col=1)
 
-    for axis, label in enumerate(("Roll", "Pitch", "Yaw")):
-        series = (
-            ("Target", run.target[:, axis], _COLORS["truth"], "dot"),
-            (
-                "Complementary",
-                run.complementary.euler[:, axis],
-                _COLORS["complementary"],
-                _DASHES["complementary"],
-            ),
-            ("Error-state EKF", run.ekf.euler[:, axis], _COLORS["ekf"], _DASHES["ekf"]),
-        )
-        for name, values, color, dash in series:
-            _line(
-                figure,
-                run.time,
-                values,
-                f"{name} {label}",
-                color,
-                dash,
-                row=2,
-            )
+    series = (
+        ("Target", run.target[:, axis], _COLORS["truth"], "dot"),
+        (
+            "Complementary",
+            run.complementary.euler[:, axis],
+            _COLORS["complementary"],
+            _DASHES["complementary"],
+        ),
+        (
+            "Error-state EKF",
+            run.ekf.euler[:, axis],
+            _COLORS["ekf"],
+            _DASHES["ekf"],
+        ),
+    )
+    for name, values, color, dash in series:
+        _line(figure, run.time, values, name, color, dash, row=2, showlegend=name == "Target")
     figure.update_yaxes(title_text="Angle (deg)", row=2, col=1)
 
-    for axis, label in enumerate(("roll", "pitch", "yaw")):
-        for name, trace, color, dash in (
-            (
-                "Complementary",
-                run.complementary,
-                _COLORS["complementary"],
-                _DASHES["complementary"],
-            ),
-            ("Error-state EKF", run.ekf, _COLORS["ekf"], _DASHES["ekf"]),
-        ):
-            _line(
-                figure,
-                run.time,
-                trace.torque[:, axis],
-                f"{name} torque {label}",
-                color,
-                dash,
-                row=3,
-            )
+    for name, trace, color, dash in (
+        (
+            "Complementary",
+            run.complementary,
+            _COLORS["complementary"],
+            _DASHES["complementary"],
+        ),
+        ("Error-state EKF", run.ekf, _COLORS["ekf"], _DASHES["ekf"]),
+    ):
+        _line(
+            figure,
+            run.time,
+            trace.torque[:, axis],
+            name,
+            color,
+            dash,
+            row=3,
+            showlegend=False,
+        )
     figure.update_yaxes(title_text="Torque (N·m)", row=3, col=1)
     return _base(figure, "Closed-loop attitude control", 720)
 
@@ -246,8 +273,9 @@ def _axes(rotation: np.ndarray, origin: np.ndarray, prefix: str, dash: str) -> l
                 y=[origin[1].item(), end[1].item()],
                 z=[origin[2].item(), end[2].item()],
                 mode="lines+markers",
-                name=f"{prefix} {'XYZ'[index]} axis",
+                name=prefix,
                 legendgroup=prefix,
+                showlegend=index == 0,
                 line={"color": color, "width": 6, "dash": dash},
                 marker={"size": 3, "color": color},
                 hovertemplate=f"{prefix} {'XYZ'[index]} axis<extra></extra>",
@@ -283,17 +311,14 @@ def pose_figure(run: Replay, index: int) -> go.Figure:
             z=[sensor_position[2].item()],
             mode="markers",
             name="True IMU position",
+            legendgroup="True IMU position",
+            showlegend=True,
             marker={"size": 6, "color": "#222222", "symbol": "diamond"},
             hovertemplate="True IMU position<extra></extra>",
         )
     )
     figure.update_layout(
-        title=f"Body and sensor frames at {run.time[index]:.2f} s",
-        template="plotly_white",
-        height=590,
-        autosize=True,
-        margin={"l": 10, "r": 10, "t": 74, "b": 10},
-        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "x": 0},
+        _layout(f"Body and sensor frames at {run.time[index]:.2f} s", 590, left=10, right=10),
         scene={
             "aspectmode": "data",
             "xaxis_title": "World east (m)",
