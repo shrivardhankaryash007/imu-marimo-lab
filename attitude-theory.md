@@ -81,6 +81,22 @@ Suppose the estimated roll is $10^\circ$, while a trusted static accelerometer r
 
 The scalar complementary example illustrates a discrete blend: faster correction reduces drift but passes more vibration and translational acceleration into tilt.
 
+## Online gyro calibration with RLS
+
+The [equation guide](equations.md#recursive-least-squares) gives the streaming
+update and defines each symbol. With exponential forgetting, RLS minimizes
+$\sum_{i=1}^{k}\lambda^{k-i}(y_i-\phi_i^T\theta)^2$ plus the decaying prior.
+RLS estimates the gyro scale and bias here. It assumes a synchronized known
+reference rate. The lab uses a synthetic reference so its rank and true
+parameters can be shown alongside the estimate.
+
+Try $\lambda=1$ at a sudden bias step to see how older data slow the correction.
+Then use $\lambda=0.985$. Its memory scale is about $1/(1-\lambda)=67$ samples,
+or 1.3 seconds at 50 Hz. If the reference motion is constant, the design matrix
+has rank one. Many combinations of scale and bias explain the same reading,
+even if the residual is small. Change the speed and direction to identify both.
+[Online recursive least squares](https://www.mathworks.com/help/ident/ug/online-recursive-least-squares-estimation.html)
+
 ## Timing and validation
 
 Use starter replay gates of $|\|f_s\|-g|\le0.14g$ for accelerometer norm and relative magnetometer magnitude deviation $\le0.23$ from its calibrated nominal value. These are tunable lab values, not universal limits. An optional approximate NIS cutoff is $9.21$ for a two-dimensional tangent residual (99% chi-square); use the proper dimension and covariance for other residuals.

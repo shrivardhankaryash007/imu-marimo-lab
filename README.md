@@ -7,13 +7,22 @@ synthetic data with known truth and run locally without an account or API key.
 | Notebook | What you can explore |
 | --- | --- |
 | [IMUs from chip to controller](imu.py) | MEMS cutaway, magnetometer calibration, attitude and frames, drift and aiding, arbitrary 3D offsets, complementary fusion, and feedback. [Course notes](course.md) |
-| [3D attitude and control](attitude_lab.py) | Compare gyro-only, complementary, and error-state Kalman estimates on the same 50 Hz replay. Change the mount, inspect an individual update, and compare independently controlled rigid bodies. [Derivations and worked examples](attitude-theory.md) |
+| [IMU math, sensor fusion, and control](attitude_lab.py) | See the equations on opening. Compare complementary and Kalman filters, fit gyro scale and bias with RLS, and change feedback gains and torque limits. [Equation guide](equations.md) · [Full derivations](attitude-theory.md) |
 
-## Run on a new device
+## Open on a Mac
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then clone
-this repo and run either notebook. The first launch installs the notebook's
-pinned dependencies in an isolated environment. The commands below use Python 3.11, which uv can provision.
+In Finder, double-click **Open IMU Math.command** for equations, filtering and
+control, or **Open IMU Course.command** for the sensor and mechanics course.
+The launcher opens the notebook in your browser and installs uv for your user
+if needed. The first launch may take longer while dependencies are downloaded.
+Keep the launchers and notebooks together in the same folder. Leave the Terminal
+window open while you use the notebook.
+
+## Run from a terminal
+
+On other platforms, install [uv](https://docs.astral.sh/uv/getting-started/installation/),
+clone the repo, and run a notebook. The first launch provisions its isolated
+Python 3.11 environment.
 
 ```sh
 git clone https://github.com/shrivardhankaryash007/imu-marimo-lab.git
@@ -30,7 +39,8 @@ or export the sampled time series as CSV from the 3D lab.
 
 The tutor starts off. To enable it, copy `.env.example` to `.env`, fill in your
 provider's chat API base URL, model ID, and API key if required, and start the
-notebook with that file. The repository ignores `.env`.
+notebook with that file. The Mac launchers load `.env` automatically. The
+repository ignores `.env`.
 
 ```sh
 uvx --python 3.11 --env-file .env marimo@0.25.2 run --sandbox=uv --host 127.0.0.1 --token imu.py

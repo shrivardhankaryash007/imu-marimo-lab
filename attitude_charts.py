@@ -10,6 +10,7 @@ from plotly.subplots import make_subplots  # type: ignore[import-untyped]  # Plo
 
 if TYPE_CHECKING:
     from attitude_sim import ControlRun, Replay
+    from gyro_rls import CalibrationReplay
 
 _COLORS = {
     "truth": "#222222",
@@ -301,3 +302,25 @@ def pose_figure(run: Replay, index: int) -> go.Figure:
         },
     )
     return figure
+
+
+def rls_figure(run: CalibrationReplay) -> go.Figure:
+    """Compare the gyro calibration estimates with known values and residuals."""
+    figure = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.065)
+    _line(
+        figure,
+        run.time,
+        np.full_like(run.time, run.true_scale),
+        "True scale",
+        _COLORS["truth"],
+        "dot",
+    )
+    _line(figure, run.time, run.estimates[:, 0], "RLS scale", _COLORS["gyro"])
+    _line(figure, run.time, run.true_bias, "True bias", _COLORS["truth"], "dot", row=2)
+    _line(figure, run.time, run.estimates[:, 1], "RLS bias", _COLORS["ekf"], row=2)
+    _line(figure, run.time, run.residual, "Innovation", _COLORS["complementary"], row=3)
+    figure.add_vline(x=6, line_dash="dash", line_color="#8a8a8a", line_width=1)
+    figure.update_yaxes(title_text="Scale", row=1, col=1)
+    figure.update_yaxes(title_text="Bias (deg/s)", row=2, col=1)
+    figure.update_yaxes(title_text="Residual (deg/s)", row=3, col=1)
+    return _base(figure, "Online gyro calibration", 570)

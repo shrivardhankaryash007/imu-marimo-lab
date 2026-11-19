@@ -75,6 +75,9 @@ def _(mo, sections):
 
             Start with what the chip feels. Follow those signals through attitude,
             reference-point motion, estimation and feedback. An optional tutor lives in the sidebar.
+
+            For the equations and the hands-on complementary, Kalman, RLS and
+            control experiments, double-click **Open IMU Math.command** in the repo.
             """),
             chapter,
         ],

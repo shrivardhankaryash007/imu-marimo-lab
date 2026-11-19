@@ -6,7 +6,7 @@
 import marimo
 
 __generated_with = "0.25.2"
-app = marimo.App(width="medium", app_title="3D IMU attitude lab")
+app = marimo.App(width="medium", app_title="IMU math, sensor fusion, and control")
 
 
 @app.cell
@@ -21,27 +21,36 @@ def _():
 
     import attitude_charts as charts
     import attitude_sim as sim
+    import gyro_rls as rls
     import imu_tutor as tutor
 
-    return Path, StringIO, asyncio, charts, mo, np, re, sim, tutor
+    return Path, StringIO, asyncio, charts, mo, np, re, rls, sim, tutor
 
 
 @app.cell(hide_code=True)
 def _(Path, mo, re, tutor):
-    _text = Path(__file__).with_name("attitude-theory.md").read_text(encoding="utf-8")
+    _folder = Path(__file__).parent
+    _text = (_folder / "attitude-theory.md").read_text(encoding="utf-8")
+    visible_math = (_folder / "equations.md").read_text(encoding="utf-8")
     _parts = re.split(r"^## (.+)$", _text, flags=re.MULTILINE)[1:]
     equations = dict(zip(_parts[::2], _parts[1::2], strict=True))
     tutor_context = tutor.ExperimentContext("3D attitude estimation and control")
-    mo.md(r"""
-    # 3D IMU attitude lab
+    mo.vstack(
+        [
+            mo.md("""
+        # IMU math, sensor fusion, and control
 
-    Estimate **roll, pitch and yaw** from one synthetic sensor stream. Then see
-    what happens when each estimator closes its own torque loop.
+        [Sensor fusion](#sensor-fusion) · [Complementary filter](#complementary-filter) ·
+        [Kalman filter](#kalman-filter) · [RLS](#recursive-least-squares) ·
+        [Control theory](#control-theory)
 
-    **Predict first.** Turn off heading aid. Which angle can gravity still correct?
-    Try a mount-yaw calibration error next, then scrub to the acceleration pulse.
-    """)
-    return equations, tutor_context
+        Try the [sensor fusion replay](#sensor-fusion-replay),
+        [RLS experiment](#rls-experiment), or [control experiment](#adjust-the-attitude).
+        """),
+            mo.md(visible_math),
+        ]
+    )
+    return equations, tutor_context, visible_math
 
 
 @app.cell(hide_code=True)
@@ -134,6 +143,8 @@ def _(mo, sim):
 
     mo.vstack(
         [
+            mo.md("## Sensor fusion replay"),
+            mo.callout("Turn off heading aid and predict which angle will drift."),
             _group("heading_aid", "reject_disturbance", "ideal_lever_correction"),
             _group("gyro_bias", "translation", "magnetic_interference"),
             mo.accordion(
@@ -257,6 +268,106 @@ def _(charts, mo, np, replay, sample_time, settings, sim):
 
 @app.cell(hide_code=True)
 def _(mo):
+    rls_inputs = mo.ui.dictionary(
+        {
+            "forgetting": mo.ui.slider(
+                0.97,
+                1.0,
+                step=0.001,
+                value=0.985,
+                label="Forgetting factor",
+                show_value=True,
+                include_input=True,
+                debounce=True,
+            ),
+            "bias_step": mo.ui.slider(
+                0,
+                8,
+                step=0.5,
+                value=4.0,
+                label="Bias jump at 6 s (°/s)",
+                show_value=True,
+                debounce=True,
+            ),
+            "excitation": mo.ui.dropdown(
+                ["Varied rate", "Pause, then resume", "Constant rate"],
+                value="Varied rate",
+                label="Reference motion",
+            ),
+        }
+    )
+    mo.vstack(
+        [
+            mo.md("## RLS experiment"),
+            mo.callout(
+                "Try a constant rate first. Can two different bias and scale pairs "
+                "explain the same reading?"
+            ),
+            mo.hstack([rls_inputs[key] for key in rls_inputs.elements], justify="start", wrap=True),
+        ]
+    )
+    return (rls_inputs,)
+
+
+@app.cell(hide_code=True)
+def _(charts, mo, rls, rls_inputs):
+    calibration_run = rls.calibrate_gyro(**rls_inputs.value)
+    mo.ui.plotly(
+        charts.rls_figure(calibration_run), config={"displaylogo": False, "responsive": True}
+    )
+    return (calibration_run,)
+
+
+@app.cell(hide_code=True)
+def _(mo, rls):
+    calibration_time = mo.ui.slider(
+        0,
+        rls.DURATION_S,
+        step=rls.SAMPLE_INTERVAL_S,
+        value=6.0,
+        label="Inspect RLS sample (s)",
+        show_value=True,
+        include_input=True,
+        debounce=True,
+    )
+    mo.vstack([mo.md("### Inspect the RLS update"), calibration_time])
+    return (calibration_time,)
+
+
+@app.cell(hide_code=True)
+def _(calibration_run, calibration_time, mo, np, rls):
+    _i = round(calibration_time.value / rls.SAMPLE_INTERVAL_S)
+    _reference = calibration_run.reference[: _i + 1]
+    _design = np.column_stack((_reference, np.ones(_reference.size)))
+    _rank = int(np.linalg.matrix_rank(_design))
+    _s, _b = calibration_run.estimates[_i]
+    rls_summary = (
+        f"At **{calibration_run.time[_i]:.2f} s**, the observed motion has rank **{_rank}/2**. "
+        f"Estimated scale **{_s:.4f}** and bias **{_b:+.3f}°/s**. "
+        f"Prediction error **{calibration_run.residual[_i]:+.3f}°/s**."
+    )
+    _numbers = [
+        {"Term": "Reference rate", "Value": f"{calibration_run.reference[_i]:+.3f} °/s"},
+        {"Term": "Raw gyro rate", "Value": f"{calibration_run.measurement[_i]:+.3f} °/s"},
+        {"Term": "Prediction before update", "Value": f"{calibration_run.prediction[_i]:+.3f} °/s"},
+        {"Term": "Gain for scale", "Value": f"{calibration_run.gain[_i, 0]:+.6f}"},
+        {"Term": "Gain for bias", "Value": f"{calibration_run.gain[_i, 1]:+.6f}"},
+        {
+            "Term": "True scale and bias",
+            "Value": f"{calibration_run.true_scale:.4f}, {calibration_run.true_bias[_i]:+.3f} °/s",
+        },
+    ]
+    mo.vstack(
+        [
+            mo.md(rls_summary),
+            mo.ui.table(_numbers, selection=None, pagination=False),
+        ]
+    )
+    return (rls_summary,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
     controller = mo.ui.dictionary(
         {
             "kp": mo.ui.slider(
@@ -351,9 +462,13 @@ def _(charts, controller, mo, np, settings, sim):
 
 
 @app.cell(hide_code=True)
-def _(control_summary, equations, sample_summary, tutor_context):
+def _(control_summary, equations, rls_summary, sample_summary, tutor_context, visible_math):
     tutor_context.values = (
-        sample_summary.replace("**", "") + "\nControl: " + control_summary.replace("**", "")
+        sample_summary.replace("**", "")
+        + "\nControl: "
+        + control_summary.replace("**", "")
+        + "\nRLS: "
+        + rls_summary.replace("**", "")
     )
     _ordered = (
         "Complementary filters",
@@ -361,7 +476,9 @@ def _(control_summary, equations, sample_summary, tutor_context):
         "Geometric attitude control",
         "Sources and scope",
     )
-    tutor_context.reference = "\n".join(equations.get(section, "") for section in _ordered)
+    tutor_context.reference = (
+        visible_math + "\n" + "\n".join(equations.get(section, "") for section in _ordered)
+    )
     return
 
 
