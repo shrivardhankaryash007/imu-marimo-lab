@@ -10,10 +10,10 @@ export PATH
 
 notebook="${1:-}"
 case "$notebook" in
-  attitude_lab.py|imu.py) ;;
+  attitude_lab.py|imu.py|imu_foundations.py) ;;
   *)
     printf 'Unsupported notebook: %s\n' "$notebook" >&2
-    printf 'Use one of: attitude_lab.py, imu.py\n' >&2
+    printf 'Use one of: attitude_lab.py, imu.py, imu_foundations.py\n' >&2
     exit 2
     ;;
 esac
