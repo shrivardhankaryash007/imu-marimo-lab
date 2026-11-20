@@ -6,7 +6,8 @@
 """A predict-then-reveal introduction to inertial measurement units."""
 
 # Long lesson copy and Greek symbols are kept intact for the rendered equations.
-# ruff: noqa: E501, RUF001
+# B018: a bare name on a cell's last line is how marimo displays that cell.
+# ruff: noqa: E501, RUF001, B018
 
 import marimo
 
@@ -159,6 +160,7 @@ def _(intro, mo):
             ),
         ]
     )
+    lesson_00
     return (lesson_00,)
 
 
@@ -195,6 +197,7 @@ def _(w01_pitch, w01_roll, layout_chart, lesson_view, go, imu_basics, mo, np, q0
         "A board at rest reports the force that holds it up. A drop test briefly removes that support.",
         abs_tol=0.03,
     )
+    lesson_01
     return lesson_01, q01, answer01
 
 
@@ -247,6 +250,7 @@ def _(w02_fs, w02_value, layout_chart, lesson_view, go, imu_basics, mo, np, q02)
         "Change the range on a board and watch both the smallest step and the clipping point move.",
         rel_tol=0.05,
     )
+    lesson_02
     return lesson_02, q02, answer02
 
 
@@ -287,6 +291,7 @@ def _(w03_pitch, w03_roll, layout_chart, lesson_view, go, imu_basics, mo, q03):
         "Rotate the physical board nose-up and compare the x sign with this convention.",
         abs_tol=0.03,
     )
+    lesson_03
     return lesson_03, q03, answer03
 
 
@@ -326,7 +331,7 @@ def _(
         "Tilt from gravity, and what breaks it",
         "Gravity can show tilt when the board is still. Forward acceleration adds another force to the same reading. The accelerometer cannot tell which part came from tilt.",
         r"$\hat\theta = \operatorname{accel\_tilt}(f_b)$",
-        "$\\hat\theta$ is estimated pitch in degrees; $f_b$ is measured specific force in g.",
+        "$\\hat\\theta$ is estimated pitch in degrees; $f_b$ is measured specific force in g.",
         mo.vstack(
             [
                 w04_roll,
@@ -344,6 +349,7 @@ def _(
         "A car accelerometer mixes gravity with acceleration during a launch or brake.",
         abs_tol=1.0,
     )
+    lesson_04
     return lesson_04, q04, truth04
 
 
@@ -386,6 +392,7 @@ def _(w05_bias, w05_noise, w05_time, layout_chart, lesson_view, go, imu_basics, 
         "A still board log reveals a fixed gyro offset that can be estimated before motion.",
         rel_tol=0.1,
     )
+    lesson_05
     return lesson_05, q05, answer05
 
 
@@ -419,7 +426,7 @@ def _(w06_noise, w06_walk, layout_chart, lesson_view, go, imu_basics, mo, np, q0
         "Reading gyro noise: Allan deviation",
         "A gyro's noise changes with the time window used to average it. Allan deviation shows that change on a log scale. White rate noise falls as the averaging time grows.",
         r"$\sigma_A(\tau) \approx N/\sqrt{\tau}$",
-        "$\\sigma_A$ is Allan deviation in °/s; $N$ is noise density in °/s/√Hz; $\tau$ is seconds.",
+        "$\\sigma_A$ is Allan deviation in °/s; $N$ is noise density in °/s/√Hz; $\\tau$ is seconds.",
         mo.vstack([w06_noise, w06_walk, mo.ui.plotly(fig06)]),
         f"Noise density {w06_noise.value} °/s/√Hz. What is the Allan deviation at τ = 1 s, in °/s?",
         q06,
@@ -428,6 +435,7 @@ def _(w06_noise, w06_walk, layout_chart, lesson_view, go, imu_basics, mo, np, q0
         "A long still recording lets you see which noise behavior dominates at each averaging time.",
         rel_tol=0.15,
     )
+    lesson_06
     return lesson_06, q06, truth06
 
 
@@ -482,6 +490,7 @@ def _(
         "Vibration above a board's useful sample band can appear as a false slower motion.",
         abs_tol=0.5,
     )
+    lesson_07
     return lesson_07, q07, answer07
 
 
@@ -568,6 +577,7 @@ def _(
         abs_tol=0.005,
         extras=mo.md(f"The fitted hard-iron x centre is {fit08.center[0]:.2f} µT."),
     )
+    lesson_08
     return lesson_08, answer_offset08, answer_center08
 
 
@@ -623,6 +633,7 @@ def _(
         "A board compass needs a good tilt estimate and a site-specific declination value.",
         abs_tol=2.0,
     )
+    lesson_09
     return lesson_09, q09, answer09
 
 
@@ -672,7 +683,7 @@ def _(w10_alpha, w10_bias, w10_noise, layout_chart, lesson_view, go, imu_basics,
         "Complementary filter: trust the gyro short, gravity long",
         "A gyro follows quick turns but its bias builds over time. Gravity gives a slower tilt reference when motion is calm. A complementary filter blends both signals.",
         r"$\tau=\frac{\alpha\,dt}{1-\alpha},\quad e_\infty=\tau b$",
-        "$\alpha$ is the gyro weight per step; $dt$ is seconds; $\tau$ is seconds; $b$ is gyro bias in °/s; $e_\\infty$ is steady angle error in degrees.",
+        "$\\alpha$ is the gyro weight per step; $dt$ is seconds; $\\tau$ is seconds; $b$ is gyro bias in °/s; $e_\\infty$ is steady angle error in degrees.",
         mo.vstack([w10_alpha, w10_bias, w10_noise, panel10]),
         f"α = {w10_alpha.value}, dt = 0.01 s, gyro bias {w10_bias.value} °/s. Steady-state angle error, in degrees?",
         q10,
@@ -681,6 +692,7 @@ def _(w10_alpha, w10_bias, w10_noise, layout_chart, lesson_view, go, imu_basics,
         "A real filter uses the accelerometer as the slow correction while the board is not accelerating strongly.",
         rel_tol=0.1,
     )
+    lesson_10
     return lesson_10, q10, answer10, tau10
 
 
@@ -718,7 +730,7 @@ def _(w11_pitch, layout_chart, lesson_view, go, imu_basics, mo, np, q11):
             "Gimbal lock and quaternions",
             "Euler angles describe rotation with three ordered turns. Near a straight-up pitch, a small body turn can demand a very large yaw-angle rate. Quaternions store rotation without that particular singularity.",
             r"$\dot{\eta}=T(\phi,\theta)\,\omega$",
-            "$\\eta$ are Euler angles in radians per second; $T$ maps body rate $\\omega$ in rad/s using roll $\\phi$ and pitch $\theta$.",
+            "$\\dot{\\eta}$ are Euler-angle rates in rad/s; $T$ maps body rate $\\omega$ in rad/s using roll $\\phi$ and pitch $\\theta$.",
             mo.vstack(
                 [
                     w11_pitch,
@@ -740,7 +752,7 @@ def _(w11_pitch, layout_chart, lesson_view, go, imu_basics, mo, np, q11):
             "Gimbal lock and quaternions",
             "Euler angles describe rotation with three ordered turns. Near a straight-up pitch, a small body turn can demand a very large yaw-angle rate. Quaternions store rotation without that particular singularity.",
             r"$\dot{\eta}=T(\phi,\theta)\,\omega$",
-            "$\\eta$ are Euler angles in radians per second; $T$ maps body rate $\\omega$ in rad/s using roll $\\phi$ and pitch $\theta$.",
+            "$\\dot{\\eta}$ are Euler-angle rates in rad/s; $T$ maps body rate $\\omega$ in rad/s using roll $\\phi$ and pitch $\\theta$.",
             mo.vstack([w11_pitch, status11, mo.ui.plotly(fig11)]),
             f"At pitch {w11_pitch.value}°, how many times larger than the body rate can the yaw-rate term get?",
             q11,
@@ -749,6 +761,7 @@ def _(w11_pitch, layout_chart, lesson_view, go, imu_basics, mo, np, q11):
             "At near-vertical orientations, use an attitude representation that avoids Euler-rate singularities.",
             rel_tol=0.05,
         )
+    lesson_11
     return lesson_11, q11, truth11
 
 
@@ -795,6 +808,7 @@ def _(w12_bias, w12_tilt, w12_time, layout_chart, lesson_view, go, imu_basics, m
         "In practice, use outside references such as GNSS, wheel motion, vision, or known stationary periods.",
         rel_tol=0.1,
     )
+    lesson_12
     return lesson_12, q12, answer12
 
 
@@ -889,6 +903,7 @@ def _(w13_file, w13_unit, w13_rest, layout_chart, lesson_view, go, imu_basics, m
                 ),
             ]
         )
+    lesson_13
     return lesson_13, q13, rate13
 
 
@@ -1089,6 +1104,7 @@ def _(answers, scorecard, scorecard_note, mo):
             ),
         ]
     )
+    lesson_14
     return (lesson_14,)
 
 
