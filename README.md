@@ -1,15 +1,18 @@
 # IMU marimo lab
 
-Two interactive Python notebooks for learning how inertial sensors work and how
-sensor fusion and feedback control turn their measurements into motion. Both use
+Three interactive Python notebooks for learning how inertial sensors work and how
+sensor fusion and feedback control turn their measurements into motion. All three use
 synthetic data with known truth and run locally without an account or API key.
 
 | Notebook | What you can explore |
 | --- | --- |
+| [IMU foundations](imu_foundations.py) | Start here. Fifteen short lessons from one accelerometer reading to a fused attitude: counts and clipping, tilt, drift, Allan deviation, aliasing, calibration, heading, complementary filtering, gimbal lock and position drift. Predict each number, then reveal the live answer, or load your own CSV log. |
 | [IMUs from chip to controller](imu.py) | MEMS cutaway, magnetometer calibration, attitude and frames, drift and aiding, arbitrary 3D offsets, complementary fusion, and feedback. [Course notes](course.md) |
 | [IMU math, sensor fusion, and control](attitude_lab.py) | Open the live equation explorer to see substitutions from the selected sample. Compare complementary and Kalman filters, fit gyro scale and bias with RLS, and change feedback gains and torque limits. [Equation guide](equations.md) · [Full derivations](attitude-theory.md) |
 
 ## Open on a Mac
+
+New to IMUs? Double-click **Open IMU Foundations.command** first.
 
 In Finder, double-click **Open IMU Math.command** for equations, filtering and
 control, or **Open IMU Course.command** for the sensor and mechanics course.
@@ -30,7 +33,7 @@ cd imu-marimo-lab
 uvx --python 3.11 marimo@0.25.2 run --sandbox=uv --host 127.0.0.1 --token imu.py
 ```
 
-To open the 3D lab, use `attitude_lab.py` in the last command. To modify a
+To open the foundations notebook, use `imu_foundations.py`, or the 3D lab, use `attitude_lab.py` in the last command. To modify a
 notebook interactively, change `run` to `edit`. Keep the Python modules and
 Markdown notes alongside the notebooks. Export a chosen takeaway as Markdown,
 or export the sampled time series as CSV from the 3D lab.
@@ -76,6 +79,12 @@ title, axes, and legend spacing in the browser at wide and narrow widths.
 
 ```sh
 uv run --no-project --python 3.11 --with 'numpy==2.4.6' --with 'plotly==6.5.2' --with 'pytest>=8,<10' pytest -q
+```
+
+This command runs the foundations notebook headless:
+
+```sh
+uv run --no-project --python 3.11 --with 'marimo==0.25.2' --with 'numpy==2.4.6' --with 'plotly==6.5.2' --with 'matplotlib==3.10.8' --with 'pytest>=8,<10' pytest -q smoke_imu_foundations.py
 ```
 
 Reference material is organized into [hardware](hardware-sources.md),

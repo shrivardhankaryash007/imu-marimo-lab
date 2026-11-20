@@ -20,6 +20,7 @@ def _():
     import marimo as mo
     import numpy as np
 
+    import imu_basics
     import imu_navigation as nav
     import imu_plots as plots
     import imu_sensor as sensor
@@ -29,6 +30,7 @@ def _():
     return (
         Iterable,
         Path,
+        imu_basics,
         asyncio,
         b64encode,
         cutaway,
@@ -360,6 +362,7 @@ def _(
     chapter,
     controls,
     cutaway,
+    imu_basics,
     mo,
     nav,
     np,
@@ -418,11 +421,20 @@ def _(
             _mag = sensor.compass_heading_deg(_point)
             _raw_heading = sensor.compass_heading_deg(_raw_point)
             _true = (_mag + _v["declination"]) % 360
+            _fit = imu_basics.fit_ellipse_2d(_raw)
+            _fitted_point = imu_basics.apply_mag_fit(_raw_point[None, :], _fit)[0]
+            _fitted = sensor.compass_heading_deg(_fitted_point)
+            _residual = imu_basics.angle_diff_deg(_fitted, _mag)
             _summary = (
                 f"Yaw {_v['yaw']}° from East, hard iron x {_v['bias']} µT, "
                 f"soft iron scale {_v['scale']:.2f}, declination {_v['declination']}°. "
                 f"Raw horizontal field {_vector(_raw_point)} µT gives **{_raw_heading:.1f}°**. "
-                f"Calibrated magnetic heading **{_mag:.1f}°**, true heading **{_true:.1f}°**."
+                f"Fitted heading **{_fitted:.1f}°**, fit centre "
+                f"{_vector(_fit.center)} µT. "
+                f"Truth: magnetic heading **{_mag:.1f}°**, true heading **{_true:.1f}°**. "
+                f"Residual **{_residual:+.1f}°**. A 2D ellipse fit removes the offset and "
+                "the stretch but not a rotation of the field; one known reference heading "
+                "removes that constant residual."
             )
             _chart = plots.plot_magnetic(_ideal, _raw, _point, _raw_point)
         case "Attitude":
