@@ -215,19 +215,22 @@ def fit_ellipse_2d(points: FloatArray) -> MagFit:
     """
     if points.ndim != 2 or points.shape[1] != 2 or points.shape[0] < 5:
         raise ValueError("need an (n>=5, 2) array of points")
-    x, y = points[:, 0], points[:, 1]
+    # The "= 1" normalisation needs the origin inside the ellipse; the centroid
+    # of any arc is, while a large hard-iron offset can push the origin outside.
+    centroid = np.mean(points, axis=0)
+    x, y = points[:, 0] - centroid[0], points[:, 1] - centroid[1]
     design = np.column_stack((x * x, x * y, y * y, x, y))
     coef, *_ = np.linalg.lstsq(design, np.ones_like(x), rcond=None)
     a, b, c, d, e = (float(v) for v in coef)
     shape = np.array([[a, b / 2], [b / 2, c]])
     if np.any(np.linalg.eigvalsh(shape) <= 0):
         raise ValueError("points do not form an ellipse; sweep a full turn")
-    center = -0.5 * np.linalg.solve(shape, np.array([d, e]))
-    k = 1.0 + float(center @ shape @ center)
+    local = -0.5 * np.linalg.solve(shape, np.array([d, e]))
+    k = 1.0 + float(local @ shape @ local)
     values, vectors = np.linalg.eigh(shape / k)
     radius = 1.0 / sqrt(sqrt(float(np.prod(values))))
     soft = radius * (vectors @ np.diag(np.sqrt(values)) @ vectors.T)
-    return MagFit(center, soft, radius)
+    return MagFit(np.asarray(local + centroid, dtype=np.float64), soft, radius)
 
 
 def apply_mag_fit(points: FloatArray, fit: MagFit) -> FloatArray:

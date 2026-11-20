@@ -90,6 +90,8 @@ def test_ellipse_fit_restores_circle_up_to_constant_rotation() -> None:
     noisy = raw + 0.5 * np.random.default_rng(4).standard_normal(raw.shape)
     radii_n = np.linalg.norm(b.apply_mag_fit(noisy, b.fit_ellipse_2d(noisy)), axis=1)
     assert float(np.std(radii_n) / np.mean(radii_n)) < 0.03
+    far = ideal @ soft.T + np.array([80.0, -36.0])  # hard iron larger than the field
+    np.testing.assert_allclose(b.fit_ellipse_2d(far).center, [80.0, -36.0], atol=1e-6)
     with pytest.raises(ValueError):
         b.fit_ellipse_2d(np.zeros((4, 2)))
 
